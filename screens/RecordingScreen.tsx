@@ -20,7 +20,7 @@ export default function RecordingScreen() {
     const navigation = useNavigation<any>();
     const [cameraPermission, requestCameraPermission] = useCameraPermissions();
     const [micPermission, requestMicPermission] = useMicrophonePermissions();
-    
+
     const [isRecording, setIsRecording] = useState(false);
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
     const wsClient = useRef<AudioWebSocketClient | null>(null);
@@ -33,7 +33,7 @@ export default function RecordingScreen() {
     const webAudioContext = useRef<any>(null);
     const webMediaStream = useRef<any>(null);
     const webAudioProcessor = useRef<any>(null);
-    
+
     // Web offline buffer: accumulate PCM chunks when offline on web
     const webOfflineBuffer = useRef<Int16Array[]>([]);
 
@@ -105,17 +105,17 @@ export default function RecordingScreen() {
             // Switch to offline mode
             sessionMode.current = 'offline';
             setDisplayMode('offline');
-            
+
             // If we had a WS connection, disconnect it
             wsClient.current?.disconnect();
             wsClient.current = null;
-            
+
             console.log('Session mode: OFFLINE (sticky)');
         } else if (sessionMode.current === 'pending') {
             // First time online — set up the WebSocket
             sessionMode.current = 'online';
             setDisplayMode('online');
-            
+
             const client = new AudioWebSocketClient(
                 WS_URL,
                 (funcName, args) => {
@@ -129,7 +129,7 @@ export default function RecordingScreen() {
             );
             client.connect();
             wsClient.current = client;
-            
+
             console.log('Session mode: ONLINE');
         }
     }, [isOnline]);
@@ -199,24 +199,24 @@ export default function RecordingScreen() {
                 const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
                 const audioCtx = new AudioContextClass({ sampleRate: 16000 });
                 webAudioContext.current = audioCtx;
-                
+
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 webMediaStream.current = stream;
-                
+
                 const source = audioCtx.createMediaStreamSource(stream);
                 const processor = audioCtx.createScriptProcessor(4096, 1, 1);
                 webAudioProcessor.current = processor;
-                
+
                 source.connect(processor);
                 processor.connect(audioCtx.destination);
-                
+
                 processor.onaudioprocess = (e: any) => {
                     const inputData = e.inputBuffer.getChannelData(0);
                     const pcmData = new Int16Array(inputData.length);
                     for (let i = 0; i < inputData.length; i++) {
                         pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
                     }
-                    
+
                     if (sessionMode.current === 'online') {
                         // Stream to WebSocket
                         const uint8Array = new Uint8Array(pcmData.buffer);
@@ -227,11 +227,11 @@ export default function RecordingScreen() {
                         const base64Chunk = btoa(binary);
                         wsClient.current?.sendAudioChunk(base64Chunk);
                     }
-                    
+
                     // Always buffer locally (for mid-recording offline transition)
                     webOfflineBuffer.current.push(new Int16Array(pcmData));
                 };
-                
+
                 setIsRecording(true);
             } else {
                 // NATIVE Implementation
@@ -313,7 +313,7 @@ export default function RecordingScreen() {
                 if (webAudioProcessor.current) webAudioProcessor.current.disconnect();
                 if (webMediaStream.current) webMediaStream.current.getTracks().forEach((t: any) => t.stop());
                 if (webAudioContext.current) webAudioContext.current.close();
-                
+
                 if (sessionMode.current === 'offline') {
                     // Build WAV from buffer and save offline
                     const wavBase64 = buildWavBase64();
@@ -329,7 +329,7 @@ export default function RecordingScreen() {
                 if (audioRecorder) {
                     await audioRecorder.stop();
                     const uri = audioRecorder.uri;
-                    
+
                     if (sessionMode.current === 'offline' && uri) {
                         await saveOfflineData(uri, jobDetails);
                         navigation.navigate('Waiting');
@@ -354,14 +354,14 @@ export default function RecordingScreen() {
                     </Text>
                 </View>
             )}
-            
+
             <View style={styles.cameraContainer}>
                 <CameraView style={styles.camera} facing="back" />
                 <View style={[styles.overlay, StyleSheet.absoluteFillObject]}>
                     <ScrollView style={styles.checklist}>
                         <Text style={styles.checklistTitle}>
-                            {displayMode === 'online' 
-                                ? 'Job Referral Details (Live Extraction)' 
+                            {displayMode === 'online'
+                                ? 'Job Referral Details (Live Extraction)'
                                 : 'Job Referral Details (Offline — will process later)'}
                         </Text>
                         <Text style={styles.checklistItem}>Name: {jobDetails.homeowner_name || '—'}</Text>
@@ -371,11 +371,11 @@ export default function RecordingScreen() {
                         <Text style={styles.checklistItem}>Approved: {jobDetails.homeowner_approved ? 'Yes' : 'No'}</Text>
                         <Text style={styles.checklistItem}>Desc: {jobDetails.job_description || '—'}</Text>
                     </ScrollView>
-                    
+
                     <View style={styles.controls}>
-                        <Button 
-                            title={isRecording ? "Stop Recording" : "Start Recording"} 
-                            onPress={isRecording ? stopRecording : startRecording} 
+                        <Button
+                            title={isRecording ? "Stop Recording" : "Start Recording"}
+                            onPress={isRecording ? stopRecording : startRecording}
                             color={isRecording ? 'red' : 'green'}
                         />
                     </View>
@@ -395,13 +395,13 @@ const styles = StyleSheet.create({
     checklistItem: { color: '#00ff00', fontSize: 16, marginBottom: 5 },
     controls: { marginBottom: 30 },
     permission: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    offlineBanner: { 
-        backgroundColor: '#e65100', 
-        padding: 12, 
+    offlineBanner: {
+        backgroundColor: '#e65100',
+        padding: 12,
         alignItems: 'center',
     },
-    offlineText: { 
-        color: 'white', 
+    offlineText: {
+        color: 'white',
         fontWeight: 'bold',
         fontSize: 13,
     },

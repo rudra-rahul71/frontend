@@ -102,7 +102,7 @@ export default function SummaryScreen() {
         <SafeAreaView style={styles.container}>
             <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
                 <Text style={styles.title}>Review Job Details</Text>
-                
+
                 {fromOffline && (
                     <View style={styles.infoBanner}>
                         <Text style={styles.infoBannerText}>
@@ -127,18 +127,18 @@ export default function SummaryScreen() {
                 )}
 
                 <Text style={styles.label}>Homeowner Name:</Text>
-                <TextInput 
-                    style={[styles.input, isFieldMissing('homeowner_name') && styles.inputMissing]} 
-                    value={details.homeowner_name} 
+                <TextInput
+                    style={[styles.input, isFieldMissing('homeowner_name') && styles.inputMissing]}
+                    value={details.homeowner_name}
                     onChangeText={(v) => handleChange('homeowner_name', v)}
                     placeholder="Enter homeowner name"
                     placeholderTextColor="#999"
                 />
 
                 <Text style={styles.label}>Phone:</Text>
-                <TextInput 
-                    style={[styles.input, isFieldMissing('homeowner_phone') && styles.inputMissing]} 
-                    value={details.homeowner_phone} 
+                <TextInput
+                    style={[styles.input, isFieldMissing('homeowner_phone') && styles.inputMissing]}
+                    value={details.homeowner_phone}
                     onChangeText={(v) => handleChange('homeowner_phone', v)}
                     placeholder="Enter phone number"
                     placeholderTextColor="#999"
@@ -146,29 +146,29 @@ export default function SummaryScreen() {
                 />
 
                 <Text style={styles.label}>Address:</Text>
-                <TextInput 
-                    style={[styles.input, isFieldMissing('homeowner_address') && styles.inputMissing]} 
-                    value={details.homeowner_address} 
+                <TextInput
+                    style={[styles.input, isFieldMissing('homeowner_address') && styles.inputMissing]}
+                    value={details.homeowner_address}
                     onChangeText={(v) => handleChange('homeowner_address', v)}
                     placeholder="Enter address"
                     placeholderTextColor="#999"
                 />
 
                 <Text style={styles.label}>Service Sector:</Text>
-                <TextInput 
-                    style={[styles.input, isFieldMissing('service_sector') && styles.inputMissing]} 
-                    value={details.service_sector} 
+                <TextInput
+                    style={[styles.input, isFieldMissing('service_sector') && styles.inputMissing]}
+                    value={details.service_sector}
                     onChangeText={(v) => handleChange('service_sector', v)}
                     placeholder="e.g. PLUMBING, HVAC, ELECTRICAL"
                     placeholderTextColor="#999"
                 />
 
                 <Text style={styles.label}>Description:</Text>
-                <TextInput 
-                    style={[styles.input, styles.inputMultiline, isFieldMissing('job_description') && styles.inputMissing]} 
-                    value={details.job_description} 
-                    onChangeText={(v) => handleChange('job_description', v)} 
-                    multiline 
+                <TextInput
+                    style={[styles.input, styles.inputMultiline, isFieldMissing('job_description') && styles.inputMissing]}
+                    value={details.job_description}
+                    onChangeText={(v) => handleChange('job_description', v)}
+                    multiline
                     numberOfLines={4}
                     placeholder="Describe the job"
                     placeholderTextColor="#999"
@@ -204,10 +204,10 @@ export default function SummaryScreen() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#0a0e27' },
     content: { padding: 20 },
-    title: { 
-        fontSize: 26, 
-        fontWeight: '700', 
-        marginBottom: 20, 
+    title: {
+        fontSize: 26,
+        fontWeight: '700',
+        marginBottom: 20,
         color: '#ffffff',
     },
     infoBanner: {
@@ -256,20 +256,20 @@ const styles = StyleSheet.create({
         marginLeft: 10,
         paddingHorizontal: 5,
     },
-    label: { 
-        fontSize: 14, 
-        marginBottom: 6, 
-        color: '#8892b0', 
+    label: {
+        fontSize: 14,
+        marginBottom: 6,
+        color: '#8892b0',
         fontWeight: '600',
         textTransform: 'uppercase',
         letterSpacing: 0.5,
     },
-    input: { 
-        borderWidth: 1, 
-        borderColor: 'rgba(255,255,255,0.15)', 
-        borderRadius: 10, 
-        padding: 14, 
-        marginBottom: 16, 
+    input: {
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.15)',
+        borderRadius: 10,
+        padding: 14,
+        marginBottom: 16,
         fontSize: 16,
         color: '#ccd6f6',
         backgroundColor: 'rgba(255,255,255,0.04)',
