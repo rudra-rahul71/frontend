@@ -73,7 +73,9 @@ export class AudioWebSocketClient {
 
     disconnect() {
         if (this.ws) {
-            this.ws.send(JSON.stringify({ type: 'stop' }));
+            if (this.ws.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({ type: 'stop' }));
+            }
             this.ws.close();
             this.ws = null;
         }

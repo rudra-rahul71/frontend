@@ -13,6 +13,8 @@ const DEFAULT_HOST = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || `http://${DEFAULT_HOST}:8000`;
 const WS_URL = BACKEND_URL.replace('http', 'ws');
 
+type SessionMode = 'pending' | 'online' | 'offline';
+
 export default function RecordingScreen() {
     const { isOnline } = useNetworkState();
     const navigation = useNavigation<any>();
@@ -23,10 +25,17 @@ export default function RecordingScreen() {
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
     const wsClient = useRef<AudioWebSocketClient | null>(null);
 
+    // Sticky offline mode: once offline is detected, stays offline for the session
+    const sessionMode = useRef<SessionMode>('pending');
+    const [displayMode, setDisplayMode] = useState<SessionMode>('pending');
+
     // Web Audio Capture Refs
     const webAudioContext = useRef<any>(null);
     const webMediaStream = useRef<any>(null);
     const webAudioProcessor = useRef<any>(null);
+    
+    // Web offline buffer: accumulate PCM chunks when offline on web
+    const webOfflineBuffer = useRef<Int16Array[]>([]);
 
     const [jobDetails, setJobDetails] = useState({
         homeowner_name: '',
@@ -48,7 +57,6 @@ export default function RecordingScreen() {
             // Create playback context on first audio (must be after user gesture)
             if (!playbackContext.current) {
                 const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
-                // Gemini Live outputs PCM at 24kHz
                 playbackContext.current = new AudioContextClass({ sampleRate: 24000 });
                 playbackNextTime.current = 0;
             }
@@ -77,7 +85,6 @@ export default function RecordingScreen() {
             source.buffer = audioBuffer;
             source.connect(ctx.destination);
 
-            // Schedule chunks sequentially to avoid gaps/overlaps
             const now = ctx.currentTime;
             const startTime = Math.max(now, playbackNextTime.current);
             source.start(startTime);
@@ -87,23 +94,48 @@ export default function RecordingScreen() {
         }
     };
 
+    // Determine session mode on mount and when network changes
     useEffect(() => {
-        wsClient.current = new AudioWebSocketClient(
-            WS_URL,
-            (funcName, args) => {
-                if (funcName === 'update_job_details') {
-                    setJobDetails(prev => ({ ...prev, ...args }));
-                }
-            },
-            handleAudioResponse,
-            (text) => console.log('Gemini says:', text),
-            () => console.log('Gemini turn complete')
-        );
-
-        if (isOnline) {
-            wsClient.current.connect();
+        if (sessionMode.current === 'offline') {
+            // Sticky: once offline, stays offline for this session
+            return;
         }
 
+        if (!isOnline) {
+            // Switch to offline mode
+            sessionMode.current = 'offline';
+            setDisplayMode('offline');
+            
+            // If we had a WS connection, disconnect it
+            wsClient.current?.disconnect();
+            wsClient.current = null;
+            
+            console.log('Session mode: OFFLINE (sticky)');
+        } else if (sessionMode.current === 'pending') {
+            // First time online — set up the WebSocket
+            sessionMode.current = 'online';
+            setDisplayMode('online');
+            
+            const client = new AudioWebSocketClient(
+                WS_URL,
+                (funcName, args) => {
+                    if (funcName === 'update_job_details') {
+                        setJobDetails(prev => ({ ...prev, ...args }));
+                    }
+                },
+                handleAudioResponse,
+                (text) => console.log('Gemini says:', text),
+                () => console.log('Gemini turn complete')
+            );
+            client.connect();
+            wsClient.current = client;
+            
+            console.log('Session mode: ONLINE');
+        }
+    }, [isOnline]);
+
+    // Cleanup on unmount
+    useEffect(() => {
         return () => {
             wsClient.current?.disconnect();
             if (playbackContext.current) {
@@ -111,16 +143,59 @@ export default function RecordingScreen() {
                 playbackContext.current = null;
             }
         };
-    }, [isOnline]);
+    }, []);
 
+    // Reset session mode when screen gains focus (for new recordings)
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('focus', () => {
+            sessionMode.current = 'pending';
+            setDisplayMode('pending');
+            webOfflineBuffer.current = [];
+            setJobDetails({
+                homeowner_name: '',
+                homeowner_phone: '',
+                homeowner_address: '',
+                job_description: '',
+                service_sector: 'UNKNOWN',
+                homeowner_approved: false
+            });
+
+            // Re-evaluate based on current network state
+            if (!isOnline) {
+                sessionMode.current = 'offline';
+                setDisplayMode('offline');
+            } else {
+                sessionMode.current = 'online';
+                setDisplayMode('online');
+                const client = new AudioWebSocketClient(
+                    WS_URL,
+                    (funcName, args) => {
+                        if (funcName === 'update_job_details') {
+                            setJobDetails(prev => ({ ...prev, ...args }));
+                        }
+                    },
+                    handleAudioResponse,
+                    (text) => console.log('Gemini says:', text),
+                    () => console.log('Gemini turn complete')
+                );
+                client.connect();
+                wsClient.current = client;
+            }
+        });
+        return unsubscribe;
+    }, [navigation, isOnline]);
+
+    // Permission checks — rendered in JSX instead of early returns to preserve hook order
     if (!cameraPermission) return <View />;
     if (!cameraPermission?.granted) return <View style={styles.permission}><Button title="Grant Camera" onPress={requestCameraPermission} /></View>;
     if (!micPermission?.granted) return <View style={styles.permission}><Button title="Grant Mic" onPress={requestMicPermission} /></View>;
 
     const startRecording = async () => {
         try {
+            // Clear offline buffer for new recording
+            webOfflineBuffer.current = [];
+
             if (Platform.OS === 'web') {
-                // WEB Audio Implementation using standard Web APIs for zero-latency PCM chunks
                 const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
                 const audioCtx = new AudioContextClass({ sampleRate: 16000 });
                 webAudioContext.current = audioCtx;
@@ -137,22 +212,24 @@ export default function RecordingScreen() {
                 
                 processor.onaudioprocess = (e: any) => {
                     const inputData = e.inputBuffer.getChannelData(0);
-                    // Gemini requires 16-bit PCM arrays
                     const pcmData = new Int16Array(inputData.length);
                     for (let i = 0; i < inputData.length; i++) {
                         pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
                     }
                     
-                    // Convert Int16Array to Base64 String
-                    const uint8Array = new Uint8Array(pcmData.buffer);
-                    let binary = '';
-                    for (let i = 0; i < uint8Array.byteLength; i++) {
-                        binary += String.fromCharCode(uint8Array[i]);
+                    if (sessionMode.current === 'online') {
+                        // Stream to WebSocket
+                        const uint8Array = new Uint8Array(pcmData.buffer);
+                        let binary = '';
+                        for (let i = 0; i < uint8Array.byteLength; i++) {
+                            binary += String.fromCharCode(uint8Array[i]);
+                        }
+                        const base64Chunk = btoa(binary);
+                        wsClient.current?.sendAudioChunk(base64Chunk);
                     }
-                    const base64Chunk = btoa(binary);
                     
-                    // Fire WebSocket chunk
-                    wsClient.current?.sendAudioChunk(base64Chunk);
+                    // Always buffer locally (for mid-recording offline transition)
+                    webOfflineBuffer.current.push(new Int16Array(pcmData));
                 };
                 
                 setIsRecording(true);
@@ -168,25 +245,97 @@ export default function RecordingScreen() {
         }
     };
 
+    /**
+     * Convert buffered Int16 PCM chunks into a WAV file encoded as base64.
+     */
+    const buildWavBase64 = (): string => {
+        // Calculate total sample count
+        let totalSamples = 0;
+        for (const chunk of webOfflineBuffer.current) {
+            totalSamples += chunk.length;
+        }
+
+        const sampleRate = 16000;
+        const numChannels = 1;
+        const bitsPerSample = 16;
+        const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+        const blockAlign = numChannels * (bitsPerSample / 8);
+        const dataSize = totalSamples * (bitsPerSample / 8);
+        const headerSize = 44;
+
+        const buffer = new ArrayBuffer(headerSize + dataSize);
+        const view = new DataView(buffer);
+
+        // WAV header
+        const writeString = (offset: number, str: string) => {
+            for (let i = 0; i < str.length; i++) {
+                view.setUint8(offset + i, str.charCodeAt(i));
+            }
+        };
+
+        writeString(0, 'RIFF');
+        view.setUint32(4, 36 + dataSize, true);
+        writeString(8, 'WAVE');
+        writeString(12, 'fmt ');
+        view.setUint32(16, 16, true);          // PCM format chunk size
+        view.setUint16(20, 1, true);           // PCM format
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, byteRate, true);
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, bitsPerSample, true);
+        writeString(36, 'data');
+        view.setUint32(40, dataSize, true);
+
+        // Write PCM samples
+        let offset = 44;
+        for (const chunk of webOfflineBuffer.current) {
+            for (let i = 0; i < chunk.length; i++) {
+                view.setInt16(offset, chunk[i], true);
+                offset += 2;
+            }
+        }
+
+        // Convert to base64
+        const uint8 = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < uint8.byteLength; i++) {
+            binary += String.fromCharCode(uint8[i]);
+        }
+        return btoa(binary);
+    };
+
     const stopRecording = async () => {
         setIsRecording(false);
         try {
             if (Platform.OS === 'web') {
+                // Stop web audio capture
                 if (webAudioProcessor.current) webAudioProcessor.current.disconnect();
                 if (webMediaStream.current) webMediaStream.current.getTracks().forEach((t: any) => t.stop());
                 if (webAudioContext.current) webAudioContext.current.close();
                 
-                navigation.navigate('Summary', { jobDetails });
+                if (sessionMode.current === 'offline') {
+                    // Build WAV from buffer and save offline
+                    const wavBase64 = buildWavBase64();
+                    await saveOfflineData(null, jobDetails, wavBase64);
+                    webOfflineBuffer.current = [];
+                    navigation.navigate('Waiting');
+                } else {
+                    // Online web — go to Summary
+                    navigation.navigate('Summary', { jobDetails });
+                }
             } else {
-                if (isRecording) {
+                // Native
+                if (audioRecorder) {
                     await audioRecorder.stop();
                     const uri = audioRecorder.uri;
                     
-                    if (!isOnline && uri) {
+                    if (sessionMode.current === 'offline' && uri) {
                         await saveOfflineData(uri, jobDetails);
+                        navigation.navigate('Waiting');
+                    } else {
+                        navigation.navigate('Summary', { jobDetails });
                     }
-                    
-                    navigation.navigate('Summary', { jobDetails });
                 }
             }
         } catch (e) {
@@ -194,21 +343,33 @@ export default function RecordingScreen() {
         }
     };
 
+
+
     return (
         <SafeAreaView style={styles.container}>
-            {!isOnline && <View style={styles.offlineBanner}><Text style={styles.offlineText}>Offline Mode - Media will be uploaded later.</Text></View>}
+            {displayMode === 'offline' && (
+                <View style={styles.offlineBanner}>
+                    <Text style={styles.offlineText}>
+                        ⚡ Offline Mode — Recording will be uploaded when you're back online
+                    </Text>
+                </View>
+            )}
             
             <View style={styles.cameraContainer}>
                 <CameraView style={styles.camera} facing="back" />
                 <View style={[styles.overlay, StyleSheet.absoluteFillObject]}>
                     <ScrollView style={styles.checklist}>
-                        <Text style={styles.checklistTitle}>Job Referral Details (Live Extraction)</Text>
-                        <Text style={styles.checklistItem}>Name: {jobDetails.homeowner_name}</Text>
-                        <Text style={styles.checklistItem}>Phone: {jobDetails.homeowner_phone}</Text>
-                        <Text style={styles.checklistItem}>Address: {jobDetails.homeowner_address}</Text>
+                        <Text style={styles.checklistTitle}>
+                            {displayMode === 'online' 
+                                ? 'Job Referral Details (Live Extraction)' 
+                                : 'Job Referral Details (Offline — will process later)'}
+                        </Text>
+                        <Text style={styles.checklistItem}>Name: {jobDetails.homeowner_name || '—'}</Text>
+                        <Text style={styles.checklistItem}>Phone: {jobDetails.homeowner_phone || '—'}</Text>
+                        <Text style={styles.checklistItem}>Address: {jobDetails.homeowner_address || '—'}</Text>
                         <Text style={styles.checklistItem}>Sector: {jobDetails.service_sector}</Text>
                         <Text style={styles.checklistItem}>Approved: {jobDetails.homeowner_approved ? 'Yes' : 'No'}</Text>
-                        <Text style={styles.checklistItem}>Desc: {jobDetails.job_description}</Text>
+                        <Text style={styles.checklistItem}>Desc: {jobDetails.job_description || '—'}</Text>
                     </ScrollView>
                     
                     <View style={styles.controls}>
@@ -234,6 +395,14 @@ const styles = StyleSheet.create({
     checklistItem: { color: '#00ff00', fontSize: 16, marginBottom: 5 },
     controls: { marginBottom: 30 },
     permission: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    offlineBanner: { backgroundColor: '#d9534f', padding: 10, alignItems: 'center' },
-    offlineText: { color: 'white', fontWeight: 'bold' }
+    offlineBanner: { 
+        backgroundColor: '#e65100', 
+        padding: 12, 
+        alignItems: 'center',
+    },
+    offlineText: { 
+        color: 'white', 
+        fontWeight: 'bold',
+        fontSize: 13,
+    },
 });
