@@ -160,6 +160,14 @@ export const syncOfflineData = async (serverUrl: string): Promise<SyncResult> =>
                         missingFields: data.missingFields,
                     };
                     consecutiveFailures = 0;
+                    
+                    // Stop processing further uploads to avoid UI appearing "stuck".
+                    // Push the remaining items into the queue to process later.
+                    const currentIndex = uploads.indexOf(upload);
+                    for (let j = currentIndex + 1; j < uploads.length; j++) {
+                        remaining.push(uploads[j]);
+                    }
+                    break;
                 } else {
                     consecutiveFailures++;
                     remaining.push(upload);
