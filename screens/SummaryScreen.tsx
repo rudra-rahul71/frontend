@@ -39,7 +39,7 @@ export default function SummaryScreen() {
         }
     }, []);
 
-    const handleChange = (field: string, value: string) => {
+    const handleChange = (field: string, value: string | boolean) => {
         setDetails((prev: any) => ({ ...prev, [field]: value }));
     };
 
@@ -174,6 +174,25 @@ export default function SummaryScreen() {
                     placeholderTextColor="#999"
                 />
 
+                {/* Homeowner Approved Selector */}
+                <Text style={styles.label}>Homeowner Approved Estimate?</Text>
+                <View style={styles.yesNoContainer}>
+                    <TouchableOpacity
+                        style={[styles.yesNoButton, details.homeowner_approved === true && styles.yesNoButtonActive]}
+                        onPress={() => handleChange('homeowner_approved', true)}
+                        activeOpacity={0.8}
+                    >
+                        <Text style={[styles.yesNoButtonText, details.homeowner_approved === true && styles.yesNoButtonTextActive]}>Yes</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.yesNoButton, details.homeowner_approved === false && styles.yesNoButtonActive]}
+                        onPress={() => handleChange('homeowner_approved', false)}
+                        activeOpacity={0.8}
+                    >
+                        <Text style={[styles.yesNoButtonText, details.homeowner_approved === false && styles.yesNoButtonTextActive]}>No</Text>
+                    </TouchableOpacity>
+                </View>
+
                 {/* Submit Button */}
                 <TouchableOpacity
                     style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
@@ -281,6 +300,32 @@ const styles = StyleSheet.create({
     inputMissing: {
         borderColor: 'rgba(255, 152, 0, 0.6)',
         backgroundColor: 'rgba(255, 152, 0, 0.05)',
+    },
+    yesNoContainer: {
+        flexDirection: 'row',
+        marginBottom: 16,
+        gap: 10,
+    },
+    yesNoButton: {
+        flex: 1,
+        padding: 14,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.15)',
+        backgroundColor: 'rgba(255,255,255,0.04)',
+        alignItems: 'center',
+    },
+    yesNoButtonActive: {
+        borderColor: '#00d4ff',
+        backgroundColor: 'rgba(0, 212, 255, 0.15)',
+    },
+    yesNoButtonText: {
+        fontSize: 16,
+        color: '#ccd6f6',
+        fontWeight: '600',
+    },
+    yesNoButtonTextActive: {
+        color: '#00d4ff',
     },
     submitButton: {
         backgroundColor: '#00d4ff',
